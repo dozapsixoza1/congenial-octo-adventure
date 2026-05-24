@@ -243,7 +243,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
       <div class="captcha-box">
         <div style="flex-shrink:0"><div class="form-label" style="text-transform:none;margin:0 0 3px">Ответ:</div><div class="captcha-q" id="login-captcha-q"></div></div>
         <input type="number" class="captcha-input" id="login-captcha-ans" placeholder="?">
-        <span class="captcha-refresh" onclick="genCaptcha('login')" title="Обновить">↻</span>
+        <span class="captcha-refresh" id="btn-refresh-login" title="Обновить">↻</span>
       </div>
       <div class="auth-error" id="login-error">Ошибка</div>
       <button class="btn-primary" id="btn-login" onclick="doLogin()">Войти</button>
@@ -256,7 +256,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
       <div class="captcha-box">
         <div style="flex-shrink:0"><div class="form-label" style="text-transform:none;margin:0 0 3px">Ответ:</div><div class="captcha-q" id="reg-captcha-q"></div></div>
         <input type="number" class="captcha-input" id="reg-captcha-ans" placeholder="?">
-        <span class="captcha-refresh" onclick="genCaptcha('reg')" title="Обновить">↻</span>
+        <span class="captcha-refresh" id="btn-refresh-reg" title="Обновить">↻</span>
       </div>
       <div class="auth-error" id="reg-error">Ошибка</div>
       <button class="btn-primary" id="btn-register" onclick="doRegister()">Создать аккаунт</button>
@@ -496,7 +496,12 @@ let verifRequests = [];
 let currentTopicId = null;
 let captchaAns = {};
 
-genCaptcha('login'); genCaptcha('reg');
+// Run after DOM ready
+if(document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { genCaptcha('login'); genCaptcha('reg'); });
+} else {
+  genCaptcha('login'); genCaptcha('reg');
+}
 
 // Auth state listener - auth-overlay shown by default via CSS
 onAuthStateChanged(auth, async user => {
@@ -523,6 +528,9 @@ window.genCaptcha = function(p) {
   captchaAns[p]=ans;
   document.getElementById(p+'-captcha-q').textContent=a+' '+op+' '+b+' = ?';
 };
+document.getElementById('btn-refresh-login')?.addEventListener('click',()=>genCaptcha('login'));
+document.getElementById('btn-refresh-reg')?.addEventListener('click',()=>genCaptcha('reg'));
+
 
 window.switchTab = function(tab) {
   document.querySelectorAll('.auth-tab').forEach((t,i)=>t.classList.toggle('active',i===(tab==='login'?0:1)));
