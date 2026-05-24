@@ -4,14 +4,21 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Replify | Чат-менеджер</title>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://www.gstatic.com">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js">
+<link rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0a0c12;--bg2:#111420;--bg3:#181c2a;--bg4:#1e2235;--border:#252a3d;--border2:#2e3450;--accent:#4f8ef7;--accent2:#3a7af5;--accent-glow:rgba(79,142,247,0.18);--text:#e8eaf6;--text2:#9aa0bc;--text3:#5a6080;--success:#2ecc71;--danger:#e74c3c;--warn:#f39c12;--sidebar-w:250px;--topbar-h:54px;}
 *{margin:0;padding:0;box-sizing:border-box;}html,body{height:100%;}
 body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow:hidden;}
 ::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:var(--bg2);}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
 #loading{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px;}
-#loading svg{width:56px;height:56px;animation:spin 1.1s linear infinite;}
+#loading svg{width:56px;height:56px;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
 #loading p{color:var(--text2);font-size:.9rem;}
 #auth-overlay{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:900;padding:16px;overflow-y:auto;}
@@ -216,7 +223,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 </head>
 <body>
 
-<div id="loading">
+<div id="loading" style="display:none;">
   <svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="20" stroke="#252a3d" stroke-width="4"/><path d="M24 4a20 20 0 0 1 20 20" stroke="#4f8ef7" stroke-width="4" stroke-linecap="round"/></svg>
   <p>Загрузка Replify...</p>
 </div>
@@ -493,15 +500,32 @@ let captchaAns = {};
 
 genCaptcha('login'); genCaptcha('reg');
 
+// Fallback: if Firebase doesn't respond in 4s, show auth
+const fbTimeout = setTimeout(() => {
+  if(document.getElementById('auth-overlay').style.display !== 'flex') {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('auth-overlay').style.display = 'flex';
+  }
+}, 4000);
+
+// Show auth instantly, don't wait
+clearTimeout(fbTimeout);
+document.getElementById('loading').style.display = 'none';
+document.getElementById('auth-overlay').style.display = 'flex';
+
 onAuthStateChanged(auth, async user => {
-  document.getElementById('loading').style.display = 'none';
   if (user) {
     currentUser = user;
+    document.getElementById('auth-overlay').style.display = 'none';
+    // Show app skeleton immediately
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('topbar-nick').textContent = '...';
     await loadProfile(user.uid);
     launchApp();
   } else {
     currentUser = null; currentProfile = null;
-    showAuth();
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('auth-overlay').style.display = 'flex';
   }
 });
 
@@ -940,4 +964,4 @@ function toast(msg,type){
 function escHTML(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 </script>
 </body>
-  </html>
+</html>
