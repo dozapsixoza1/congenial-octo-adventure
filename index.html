@@ -10,7 +10,6 @@
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js">
-  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js">
 <link rel="preload" as="style" onload="this.onload=null;this.rel='stylesheet'" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0a0c12;--bg2:#111420;--bg3:#181c2a;--bg4:#1e2235;--border:#252a3d;--border2:#2e3450;--accent:#4f8ef7;--accent2:#3a7af5;--accent-glow:rgba(79,142,247,0.18);--text:#e8eaf6;--text2:#9aa0bc;--text3:#5a6080;--success:#2ecc71;--danger:#e74c3c;--warn:#f39c12;--sidebar-w:250px;--topbar-h:54px;}
@@ -21,7 +20,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 #loading svg{width:56px;height:56px;animation:spin .8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
 #loading p{color:var(--text2);font-size:.9rem;}
-#auth-overlay{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:900;padding:16px;overflow-y:auto;}
+#auth-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:900;padding:16px;overflow-y:auto;}
 .auth-box{background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:32px 36px;width:100%;max-width:420px;box-shadow:0 0 60px rgba(79,142,247,0.08),0 20px 60px rgba(0,0,0,0.5);position:relative;overflow:hidden;margin:auto;}
 .auth-box::before{content:'';position:absolute;top:-60px;right:-60px;width:180px;height:180px;background:radial-gradient(circle,rgba(79,142,247,0.12) 0%,transparent 70%);border-radius:50%;pointer-events:none;}
 .auth-logo{display:flex;align-items:center;gap:10px;margin-bottom:24px;}
@@ -447,7 +446,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, getDocs, collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyAl9qS0O2RhbfBJNsIjchC1WLspqb6_zGI",
@@ -462,7 +461,6 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const auth  = getAuth(fbApp);
 const db    = getFirestore(fbApp);
-const storage = getStorage(fbApp);
 
 const OWNER_EMAIL = "psychokaratel@replify.ru";
 const OWNER_NICK  = "psychokaratel";
@@ -500,32 +498,17 @@ let captchaAns = {};
 
 genCaptcha('login'); genCaptcha('reg');
 
-// Fallback: if Firebase doesn't respond in 4s, show auth
-const fbTimeout = setTimeout(() => {
-  if(document.getElementById('auth-overlay').style.display !== 'flex') {
-    document.getElementById('loading').style.display = 'none';
-    document.getElementById('auth-overlay').style.display = 'flex';
-  }
-}, 4000);
-
-// Show auth instantly, don't wait
-clearTimeout(fbTimeout);
-document.getElementById('loading').style.display = 'none';
-document.getElementById('auth-overlay').style.display = 'flex';
-
+// Auth state listener - auth-overlay shown by default via CSS
 onAuthStateChanged(auth, async user => {
   if (user) {
     currentUser = user;
     document.getElementById('auth-overlay').style.display = 'none';
-    // Show app skeleton immediately
-    document.getElementById('app').style.display = 'flex';
-    document.getElementById('topbar-nick').textContent = '...';
     await loadProfile(user.uid);
     launchApp();
   } else {
     currentUser = null; currentProfile = null;
-    document.getElementById('app').style.display = 'none';
     document.getElementById('auth-overlay').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
   }
 });
 
@@ -845,17 +828,24 @@ window.saveProfile=async function(){
 
 window.changeAvatar=async function(e){
   const file=e.target.files[0];if(!file)return;
+  // Resize image before saving to keep Firestore doc small
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d');
+  const img=new Image();
   const reader=new FileReader();
   reader.onload=async(ev)=>{
-    try{
-      const sr=ref(storage,`avatars/${currentUser.uid}`);
-      await uploadString(sr,ev.target.result,'data_url');
-      const url=await getDownloadURL(sr);
-      await updateDoc(doc(db,'users',currentUser.uid),{avatar:url});
-    }catch{
-      await updateDoc(doc(db,'users',currentUser.uid),{avatar:ev.target.result}).catch(()=>{});
-    }
-    toast('Аватар обновлён','success');
+    img.onload=async()=>{
+      const size=200;
+      canvas.width=size;canvas.height=size;
+      // crop to square from center
+      const min=Math.min(img.width,img.height);
+      const sx=(img.width-min)/2, sy=(img.height-min)/2;
+      ctx.drawImage(img,sx,sy,min,min,0,0,size,size);
+      const b64=canvas.toDataURL('image/jpeg',0.7);
+      await updateDoc(doc(db,'users',currentUser.uid),{avatar:b64}).catch(()=>{});
+      toast('Аватар обновлён','success');
+    };
+    img.src=ev.target.result;
   };
   reader.readAsDataURL(file);
 };
