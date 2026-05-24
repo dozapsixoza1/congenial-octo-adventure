@@ -489,7 +489,7 @@ window.addEventListener('unhandledrejection', function(e) {
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, browserLocalPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, getDocs, collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 console.log('Firebase modules loaded OK');
 
@@ -507,6 +507,8 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const auth  = getAuth(fbApp);
 const db    = getFirestore(fbApp);
+// Keep user logged in forever (localStorage persistence)
+setPersistence(auth, browserLocalPersistence).catch(e => console.error('Persistence error:', e));
 
 const OWNER_EMAIL = "psychokaratel@replify.ru";
 const OWNER_NICK  = "psychokaratel";
@@ -550,11 +552,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Auth state listener
 onAuthStateChanged(auth, async user => {
+  console.log('Auth state changed:', user ? user.uid : 'null');
   if (user) {
     currentUser = user;
     document.getElementById('auth-overlay').style.display = 'none';
-    await loadProfile(user.uid);
-    launchApp();
+    try {
+      await loadProfile(user.uid);
+      await launchApp();
+    } catch(e) {
+      console.error('Launch error:', e);
+      document.getElementById('auth-overlay').style.display = 'flex';
+    }
   } else {
     currentUser = null; currentProfile = null;
     document.getElementById('auth-overlay').style.display = 'flex';
@@ -602,8 +610,16 @@ window.doLogin = async function() {
     }
     await signInWithEmailAndPassword(auth,email,pass);
   } catch(e) {
-    showErr(err,e.code==='auth/wrong-password'||e.code==='auth/invalid-credential'?'Неверный логин или пароль':'Ошибка: '+e.message);
-    genCaptcha('login');
+    console.error('Login error:', e.code, e.message);
+    const msg = {
+      'auth/wrong-password': 'Неверный пароль',
+      'auth/invalid-credential': 'Неверный логин или пароль',
+      'auth/user-not-found': 'Пользователь не найден',
+      'auth/too-many-requests': 'Слишком много попыток, подождите',
+      'auth/network-request-failed': 'Нет интернета',
+    }[e.code] || ('Ошибка: ' + e.message);
+    showErr(err, msg);
+    _genCaptcha('login');
   }
   btn.disabled=false; btn.textContent='Войти';
 };
@@ -644,30 +660,68 @@ window.doRegister = async function() {
 };
 
 window.doLogout = async function() {
-  if(currentUser) await updateDoc(doc(db,'users',currentUser.uid),{online:false}).catch(()=>{});
-  await signOut(auth);
+  if(!confirm('Выйти из аккаунта?')) return;
+  try {
+    if(currentUser) await updateDoc(doc(db,'users',currentUser.uid),{online:false}).catch(()=>{});
+    await signOut(auth);
+    // Clear app state
+    document.getElementById('app').style.display='none';
+    document.getElementById('auth-overlay').style.display='flex';
+    _genCaptcha('login');
+    _genCaptcha('reg');
+    document.getElementById('login-user').value='';
+    document.getElementById('login-pass').value='';
+    document.getElementById('login-captcha-ans').value='';
+  } catch(e) {
+    console.error('Logout error:', e);
+  }
 };
 
 function showErr(el,msg){el.textContent=msg;el.style.display='block';}
 
 async function loadProfile(uid) {
-  const snap=await getDoc(doc(db,'users',uid));
-  currentProfile=snap.exists()?{id:uid,...snap.data()}:{id:uid,nick:'User',role:'newbie',badge:'none',avatar:'',verified:false,posts:0,likes:0,bio:'',tg:''};
+  try {
+    const snap=await getDoc(doc(db,'users',uid));
+    if(snap.exists()) {
+      currentProfile={id:uid,...snap.data()};
+      console.log('Profile loaded:', currentProfile.nick, 'role:', currentProfile.role);
+    } else {
+      console.warn('No Firestore doc for uid:', uid, '- creating default');
+      const defaultProfile = {
+        nick: currentUser.email.split('@')[0],
+        email: currentUser.email,
+        role:'newbie', badge:'none', avatar:'', bio:'', tg:'',
+        verified:false, posts:0, likes:0, online:true, joined: serverTimestamp()
+      };
+      await setDoc(doc(db,'users',uid), defaultProfile);
+      currentProfile={id:uid,...defaultProfile};
+    }
+  } catch(e) {
+    console.error('loadProfile error:', e);
+    currentProfile={id:uid, nick:'User', role:'newbie', badge:'none', avatar:'', verified:false, posts:0, likes:0, bio:'', tg:''};
+  }
 }
 
 async function launchApp() {
-  document.getElementById('auth-overlay').style.display='none';
-  document.getElementById('app').style.display='flex';
-  updateDoc(doc(db,'users',currentUser.uid),{online:true}).catch(()=>{});
-  updateTopbar();
-  renderSidebar();
-  renderProfile();
-  renderRoles();
-  renderNotifications();
-  listenUsers();
-  listenTopics();
-  listenVerifications();
-  navTo('forum');
+  try {
+    console.log('launchApp started for:', currentUser.uid);
+    document.getElementById('auth-overlay').style.display='none';
+    document.getElementById('app').style.display='flex';
+    updateDoc(doc(db,'users',currentUser.uid),{online:true}).catch(()=>{});
+    updateTopbar();
+    renderSidebar();
+    renderProfile();
+    renderRoles();
+    renderNotifications();
+    listenUsers();
+    listenTopics();
+    listenVerifications();
+    navTo('forum');
+    console.log('launchApp done');
+  } catch(e) {
+    console.error('launchApp error:', e);
+    alert('Ошибка загрузки: ' + e.message);
+  }
 }
 
 function getRoleData(id){return ROLES.find(r=>r.id===id)||{name:'Участник',color:'#78909c'};}
@@ -1007,4 +1061,4 @@ function toast(msg,type){
 function escHTML(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 </script>
 </body>
-              </html>
+</html>
