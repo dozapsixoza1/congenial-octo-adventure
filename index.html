@@ -219,6 +219,40 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
   .members-grid{grid-template-columns:repeat(2,1fr);}
 }
 </style>
+<script>
+// Inline captcha - runs immediately, no Firebase needed
+var _captchaAns = {};
+function _genCaptcha(p) {
+  var a = Math.floor(Math.random()*30)+2;
+  var b = Math.floor(Math.random()*20)+1;
+  var ops = ['+','-'];
+  var op = ops[Math.floor(Math.random()*2)];
+  var ans = op==='+' ? a+b : a-b;
+  _captchaAns[p] = ans;
+  var el = document.getElementById(p+'-captcha-q');
+  if(el) el.textContent = a+' '+op+' '+b+' = ?';
+}
+function _refreshCaptcha(p) { _genCaptcha(p); }
+
+// Tab switching - no Firebase needed
+function _switchTab(tab) {
+  var tabs = document.querySelectorAll('.auth-tab');
+  tabs[0].classList.toggle('active', tab==='login');
+  tabs[1].classList.toggle('active', tab==='register');
+  document.getElementById('tab-login').style.display = tab==='login' ? '' : 'none';
+  document.getElementById('tab-register').style.display = tab==='register' ? '' : 'none';
+}
+
+window.onload = function() {
+  _genCaptcha('login');
+  _genCaptcha('reg');
+  
+  var rl = document.getElementById('btn-refresh-login');
+  var rr = document.getElementById('btn-refresh-reg');
+  if(rl) rl.onclick = function(){ _genCaptcha('login'); };
+  if(rr) rr.onclick = function(){ _genCaptcha('reg'); };
+};
+</script>
 </head>
 <body>
 
@@ -234,8 +268,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
       <div class="auth-logo-text">Replify <span>|</span> Чат-менеджер</div>
     </div>
     <div class="auth-tabs">
-      <div class="auth-tab active" onclick="switchTab('login')">Вход</div>
-      <div class="auth-tab" onclick="switchTab('register')">Регистрация</div>
+      <div class="auth-tab active" onclick="_switchTab('login')">Вход</div>
+      <div class="auth-tab" onclick="_switchTab('register')">Регистрация</div>
     </div>
     <div id="tab-login">
       <div class="form-group"><label class="form-label">Ник-нейм / Email</label><input type="text" class="form-input" id="login-user" placeholder="ник или email" autocomplete="username"></div>
@@ -442,10 +476,22 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overf
 
 
 
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  console.error('JS Error:', msg, 'Line:', line);
+  // Show auth if any error
+  var ao = document.getElementById('auth-overlay');
+  if(ao) ao.style.display = 'flex';
+};
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('Promise rejected:', e.reason);
+});
+</script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, getDocs, collection, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+console.log('Firebase modules loaded OK');
 
 
 const firebaseConfig = {
@@ -496,14 +542,13 @@ let verifRequests = [];
 let currentTopicId = null;
 let captchaAns = {};
 
-// Run after DOM ready
-if(document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => { genCaptcha('login'); genCaptcha('reg'); });
-} else {
-  genCaptcha('login'); genCaptcha('reg');
-}
+// Always run after DOM ready since module scripts are deferred
+document.addEventListener('DOMContentLoaded', () => {
+  genCaptcha('login');
+  genCaptcha('reg');
+});
 
-// Auth state listener - auth-overlay shown by default via CSS
+// Auth state listener
 onAuthStateChanged(auth, async user => {
   if (user) {
     currentUser = user;
@@ -544,7 +589,7 @@ window.doLogin = async function() {
   const ans   = parseInt(document.getElementById('login-captcha-ans').value);
   const err   = document.getElementById('login-error');
   err.style.display='none';
-  if(isNaN(ans)||ans!==captchaAns['login']){showErr(err,'Неверный ответ капчи');genCaptcha('login');return;}
+  if(isNaN(ans)||(ans!==captchaAns['login'] && ans!==_captchaAns['login'])){showErr(err,'Неверный ответ капчи');genCaptcha('login');return;}
   const btn=document.getElementById('btn-login');
   btn.disabled=true; btn.textContent='Входим...';
   try {
@@ -575,7 +620,7 @@ window.doRegister = async function() {
   if(!email.includes('@')){showErr(err,'Введите корректный email');return;}
   if(pass.length<6){showErr(err,'Пароль минимум 6 символов');return;}
   if(pass!==pass2){showErr(err,'Пароли не совпадают');return;}
-  if(isNaN(ans)||ans!==captchaAns['reg']){showErr(err,'Неверный ответ капчи');genCaptcha('reg');return;}
+  if(isNaN(ans)||(ans!==captchaAns['reg'] && ans!==_captchaAns['reg'])){showErr(err,'Неверный ответ капчи');genCaptcha('reg');return;}
   const nq=query(collection(db,'users'),where('nick','==',nick));
   const ns=await getDocs(nq);
   if(!ns.empty){showErr(err,'Этот ник уже занят');return;}
@@ -962,4 +1007,4 @@ function toast(msg,type){
 function escHTML(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 </script>
 </body>
-</html>
+              </html>
